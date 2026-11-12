@@ -1,0 +1,75 @@
+name: Build Speed Master APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter (prebuilt)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: false
+
+      - name: Unzip project
+        run: |
+          unzip -o project.zip -d project
+          ls -la project
+
+      - name: Use project's Flutter project
+        run: |
+          cd project
+          if [ -d "app" ]; then cd app; fi
+          ls -la
+          if [ -f "pubspec.yaml" ]; then
+            :
+          elif [ -d "quick_clean" ]; then
+            cd quick_clean
+          fi
+
+          ls -la
+          pwd
+          echo "PROJ_DIR=$(pwd)" >> $GITHUB_ENV
+
+      - name: Verify native libs
+        run: |
+          cd "$PROJ_DIR"
+          echo "--- android/app/src/main ---"
+          ls -R android/app/src/main 2>/dev/null || true
+          echo "--- JNI libs check ---"
+          find android -name "*.so" -o -name "*.aar" | head -n 100
+
+      - name: Build APK release
+        run: |
+          cd "$PROJ_DIR"
+          flutter build apk --release
+
+      - name: Upload APK (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeedMaster-apk
+          path: ${{ env.PROJ_DIR }}/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload APK to release v1.0.0
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp "$PROJ_DIR/build/app/outputs/flutter-apk/app-release.apk" ./SpeedMaster-v1.0.0.apk
+          gh release upload v1.0.0 SpeedMaster-v1.0.0.apk --clobber
